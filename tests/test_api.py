@@ -82,6 +82,79 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         self.assertEqual(before, self.config.read_bytes())
 
+    def test_bulk_groups_only_write_metadata_and_preserve_advanced_fields(self):
+        self.write('POST', '/api/proxies', self.draft())
+        self.write('POST', '/api/proxies', self.draft(name='ssh', local_port=22, remote_port=10022))
+        config = toml.load(self.config)
+        config['proxies'].append({'name': 'web-http', 'type': 'http', 'localPort': 8080,
+                                  'customDomains': ['example.com'], 'transport': {'useEncryption': True}})
+        self.config.write_text(toml.dumps(config) + '\n# keep this comment byte-for-byte\n', encoding='utf-8')
+        meta = json.loads(self.meta.read_text(encoding='utf-8'))
+        meta['proxies_display']['nas']['extra'] = {'keep': True}
+        meta['proxies_display']['nas']['accessUrl'] = 'https://custom.example.com/path'
+        self.meta.write_text(json.dumps(meta), encoding='utf-8')
+        before = self.config.read_bytes()
+        state = self.state()
+        result = self.write('PUT', '/api/proxy-groups', {'names': ['nas', 'web-http', 'nas'], 'group': ' 新分组 '})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(result.json['frpc_revision'], state['frpc_revision'])
+        rows = {row['name']: row for row in result.json['proxies']}
+        self.assertEqual(rows['nas']['group'], '新分组')
+        self.assertEqual(rows['web-http']['group'], '新分组')
+        self.assertEqual(rows['ssh']['group'], '家庭服务')
+        saved = json.loads(self.meta.read_text(encoding='utf-8'))
+        self.assertEqual(saved['custom'], {'keep': True})
+        self.assertEqual(saved['proxies_display']['nas']['extra'], {'keep': True})
+        self.assertEqual(saved['proxies_display']['nas']['accessUrl'], 'https://custom.example.com/path')
+        self.assertEqual(saved['proxies_display']['nas']['displayName'], '我的 NAS')
+        result = self.write('PUT', '/api/proxy-groups', {'names': ['nas', 'web-http'], 'group': ''})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual([row['group'] for row in result.json['proxies'] if row['name'] != 'ssh'], ['', ''])
+        with patch.object(self.store, '_write') as write:
+            self.assertEqual(self.write('PUT', '/api/proxy-groups', {'names': ['nas'], 'group': ''}).status_code, 200)
+            write.assert_not_called()
+
+    def test_bulk_groups_validate_all_before_writing(self):
+        self.write('POST', '/api/proxies', self.draft())
+        before = self.config.read_bytes(), self.meta.read_bytes()
+        for data in [{'names': [], 'group': ''}, {'names': 'nas', 'group': ''},
+                     {'names': ['nas', 1], 'group': ''}, {'names': ['nas'], 'group': None},
+                     {'names': ['nas'], 'group': 'x' * 51}, {'names': ['nas'], 'group': 'bad\nname'},
+                     {'names': ['nas']}, {'names': [''], 'group': ''}]:
+            with self.subTest(data=data):
+                self.assertEqual(self.write('PUT', '/api/proxy-groups', data).status_code, 400)
+                self.assertEqual((self.config.read_bytes(), self.meta.read_bytes()), before)
+        result = self.write('PUT', '/api/proxy-groups', {'names': ['nas', 'missing'], 'group': '新分组'})
+        self.assertEqual(result.status_code, 404)
+        self.assertEqual((self.config.read_bytes(), self.meta.read_bytes()), before)
+
+    def test_bulk_groups_require_fresh_revision_and_csrf(self):
+        self.write('POST', '/api/proxies', self.draft())
+        old = self.state()
+        data = {'names': ['nas'], 'group': '新分组'}
+        self.write('PUT', '/api/settings', {'target_ip': 'new.example.com'})
+        before = self.meta.read_bytes()
+        self.assertEqual(self.write('PUT', '/api/proxy-groups', data, old).status_code, 409)
+        self.assertEqual(self.client.put('/api/proxy-groups', json=data).status_code, 403)
+        current = self.state()
+        response = self.client.put('/api/proxy-groups', json={**data, 'revision': current['revision']},
+                                   headers={'X-CSRF-Token': current['csrf_token'], 'Origin': 'https://evil.test'})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.meta.read_bytes(), before)
+
+    def test_default_urls_remain_unset_when_host_or_port_changes(self):
+        self.write('POST', '/api/proxies', self.draft())
+        self.write('POST', '/api/proxies', self.draft(name='custom', remote_port=18081,
+                                                    access_url='https://custom.example.com/path'))
+        result = self.write('PUT', '/api/settings', {'target_ip': '2001:db8::1'})
+        rows = {row['name']: row for row in result.json['proxies']}
+        self.assertEqual(rows['nas']['access_url'], '')
+        self.assertEqual(rows['custom']['access_url'], 'https://custom.example.com/path')
+        result = self.write('PUT', '/api/proxies/nas', self.draft(remote_port=18082))
+        self.assertEqual(result.json['proxies'][0]['access_url'], '')
+        self.assertEqual(result.json['proxies'][0]['remote_port'], 18082)
+
     def test_validates_ports_hosts_names_urls_and_types(self):
         for override in [{'remote_port': 0}, {'local_port': 65536}, {'remote_port': True},
                          {'local_port': '80'}, {'local_ip': 'http://host:80'}, {'name': '../bad'},

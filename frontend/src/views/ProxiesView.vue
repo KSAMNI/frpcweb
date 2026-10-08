@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import {
   NButton,
   NDataTable,
@@ -11,14 +11,25 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui'
-import { address, deleteProxy, state } from '../api'
+import { address, deleteProxy, groupOptions, saveGroups, state } from '../api'
 import type { ProxyConfig } from '../types'
 import ApplyPanel from '../components/ApplyPanel.vue'
 import ProxyDrawer from '../components/ProxyDrawer.vue'
 import Icon from '../components/Icon.vue'
+import GroupSelect from '../components/GroupSelect.vue'
 const search = ref('')
 const type = ref('all')
 const visibility = ref('all')
+const groupFilter = ref<string | null>(null)
+const checked = ref<string[]>([])
+const batchGroup = ref('')
+const grouping = ref(false)
+const groupFilters = computed(() =>
+  groupOptions.value.map((option) => ({
+    ...option,
+    label: `${option.label} (${state.proxies.filter((p) => p.group === option.value).length})`,
+  })),
+)
 const drawer = ref(false)
 const selected = ref<ProxyConfig | null>(null)
 const cloning = ref(false)
@@ -29,12 +40,34 @@ const filtered = computed(() =>
   state.proxies.filter(
     (p) =>
       (type.value === 'all' || p.type === type.value) &&
+      (groupFilter.value === null || p.group === groupFilter.value) &&
       (visibility.value === 'all' || p.visible === (visibility.value === 'visible')) &&
       `${p.name} ${p.display_name} ${p.group} ${p.local_ip} ${p.local_port} ${p.remote_port}`
         .toLowerCase()
         .includes(search.value.toLowerCase()),
   ),
 )
+// Never silently apply a batch operation to rows hidden by a changed filter.
+watch([search, type, visibility, groupFilter], () => {
+  checked.value = []
+})
+watch(filtered, (proxies) => {
+  const names = new Set(proxies.map((p) => p.name))
+  checked.value = checked.value.filter((name) => names.has(name))
+})
+async function changeGroups(names: string[], group: string, batch = false) {
+  if (grouping.value || !names.length) return
+  grouping.value = true
+  try {
+    await saveGroups([...names], group)
+    if (batch) checked.value = []
+    message.success('分组已更新，首页立即生效，无需重启 frpc')
+  } catch (error) {
+    message.error((error as Error).message)
+  } finally {
+    grouping.value = false
+  }
+}
 function edit(proxy: ProxyConfig | null = null, clone = false) {
   selected.value = proxy
   cloning.value = clone
@@ -61,6 +94,7 @@ function remove(proxy: ProxyConfig) {
   })
 }
 const columns: DataTableColumns<ProxyConfig> = [
+  { type: 'selection', disabled: () => grouping.value },
   {
     title: '服务 / 代理名称',
     key: 'display_name',
@@ -71,6 +105,19 @@ const columns: DataTableColumns<ProxyConfig> = [
         h('span', { class: 'table-avatar' }, h(Icon, { name: 'Box', size: 18 })),
         h('div', {}, [h('strong', {}, p.display_name), h('small', {}, p.name)]),
       ]),
+  },
+  {
+    title: '分组 · 直接修改',
+    key: 'group',
+    width: 190,
+    render: (p) =>
+      h(GroupSelect, {
+        modelValue: p.group,
+        label: `${p.display_name} 的分组`,
+        size: 'small',
+        disabled: grouping.value,
+        'onUpdate:modelValue': (group: string) => changeGroups([p.name], group),
+      }),
   },
   {
     title: '协议',
@@ -145,7 +192,7 @@ const columns: DataTableColumns<ProxyConfig> = [
           代理配置
           <span class="count-badge">{{ state.proxies.length }}</span>
         </h2>
-        <p>集中管理转发规则与首页展示</p>
+        <p>直接修改分组，或勾选多个代理批量归类</p>
       </div>
       <NButton type="primary" @click="edit()">
         <template #icon><Icon name="Plus" /></template>
@@ -162,6 +209,16 @@ const columns: DataTableColumns<ProxyConfig> = [
       >
         <template #prefix><Icon name="Search" :size="16" /></template>
       </NInput>
+      <NSelect
+        v-model:value="groupFilter"
+        :options="groupFilters"
+        clearable
+        filterable
+        placeholder="全部分组"
+        aria-label="筛选分组"
+        :input-props="{ 'aria-label': '筛选分组' }"
+        class="filter-select"
+      />
       <NSelect
         v-model:value="type"
         aria-label="筛选协议"
@@ -183,13 +240,28 @@ const columns: DataTableColumns<ProxyConfig> = [
         class="filter-select"
       />
     </div>
+    <div v-if="checked.length" class="batch-group-toolbar" role="region" aria-label="批量分组">
+      <strong>已选 {{ checked.length }} 个代理</strong>
+      <GroupSelect
+        v-model="batchGroup"
+        label="批量目标分组"
+        :disabled="grouping"
+        class="batch-group-select"
+      />
+      <NButton type="primary" :loading="grouping" @click="changeGroups(checked, batchGroup, true)">
+        {{ batchGroup ? '移动到分组' : '移至未分组' }}
+      </NButton>
+      <NButton :disabled="grouping" @click="checked = []">取消选择</NButton>
+      <small>支持跨页选择；切换筛选会清空选择</small>
+    </div>
     <NDataTable
+      v-model:checked-row-keys="checked"
       :columns="columns"
       :data="filtered"
       :row-key="(row: ProxyConfig) => row.name"
       :bordered="false"
-      :scroll-x="950"
-      :pagination="{ pageSize: 12, showSizePicker: true, pageSizes: [12, 24, 48] }"
+      :scroll-x="1180"
+      :pagination="{ defaultPageSize: 12, showSizePicker: true, pageSizes: [12, 24, 48] }"
     >
       <template #empty>
         <NEmpty
@@ -205,7 +277,7 @@ const columns: DataTableColumns<ProxyConfig> = [
     </NDataTable>
     <div class="table-footnote">
       <Icon name="ShieldCheck" :size="15" />
-      当前可视化编辑支持 TCP / UDP；其他协议保留原配置，以只读方式展示。
+      分组修改立即生效，无需应用配置。连接规则编辑支持 TCP / UDP；其他协议也可分组，原连接配置保持只读。
     </div>
   </section>
   <ProxyDrawer v-model:show="drawer" :proxy="selected" :clone="cloning" />

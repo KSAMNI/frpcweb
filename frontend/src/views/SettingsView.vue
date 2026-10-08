@@ -30,7 +30,7 @@ async function save() {
       <div class="section-heading">
         <div>
           <h2>服务访问地址</h2>
-          <p>用于首页复制地址和生成 Web 链接</p>
+          <p>代理默认使用此地址 + 各自的远程端口</p>
         </div>
         <div class="stat-icon teal"><Icon name="Globe" :size="21" /></div>
       </div>
@@ -43,7 +43,9 @@ async function save() {
           />
         </NFormItem>
         <p class="field-help">
-          这里是访问服务时使用的地址，不会修改 frpc 的 serverAddr，也不会批量改写已设置的自定义 Web 链接。
+          只填写 IP 或域名，不含协议、端口和路径。未设置自定义链接的 Web 入口自动使用
+          http://此地址:远程端口；保存后立即更新，无需逐个编辑代理。不会修改 frpc 的
+          serverAddr，也不会覆盖已设置的自定义 Web 链接。
         </p>
         <NButton type="primary" attr-type="submit" :loading="saving">保存地址</NButton>
       </NForm>

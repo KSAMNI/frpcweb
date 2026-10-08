@@ -14,9 +14,10 @@ import {
   useDialog,
   useMessage,
 } from 'naive-ui'
-import { ApiError, address, saveProxy, state } from '../api'
+import { ApiError, address, serviceWebUrl, saveProxy, state } from '../api'
 import type { ProxyConfig, ProxyDraft } from '../types'
 import Icon from './Icon.vue'
+import GroupSelect from './GroupSelect.vue'
 const props = defineProps<{ show: boolean; proxy: ProxyConfig | null; clone: boolean }>()
 const emit = defineEmits<{ 'update:show': [value: boolean] }>()
 const message = useMessage()
@@ -79,13 +80,7 @@ function selectTemplate(value: string) {
   draft.local_port = ({ web: 80, ssh: 22, rdp: 3389 } as Record<string, number>)[value] ?? null
   if (value !== 'web') draft.access_url = ''
 }
-function suggestUrl() {
-  if (!draft.remote_port) {
-    message.info('请先填写远程端口')
-    return
-  }
-  draft.access_url = `http://${address(state.target_ip, draft.remote_port)}`
-}
+const inheritedUrl = computed(() => serviceWebUrl({ ...draft, access_url: '' }))
 function close() {
   if (saving.value) return
   if (JSON.stringify(draft) !== initial.value) {
@@ -224,10 +219,10 @@ async function save(keepOpen = false) {
               v-model:value="draft.local_port"
               :min="1"
               :max="65535"
-              :precision="0"
               :show-button="false"
+              :update-value-on-input="true"
               placeholder="服务实际监听端口"
-              :input-props="{ 'aria-label': '本地端口' }"
+              :input-props="{ 'aria-label': '本地端口', inputmode: 'numeric' }"
             />
           </NFormItem>
           <NFormItem
@@ -239,10 +234,10 @@ async function save(keepOpen = false) {
               v-model:value="draft.remote_port"
               :min="1"
               :max="65535"
-              :precision="0"
               :show-button="false"
+              :update-value-on-input="true"
               placeholder="frps 对外访问端口"
-              :input-props="{ 'aria-label': '远程端口' }"
+              :input-props="{ 'aria-label': '远程端口', inputmode: 'numeric' }"
             />
           </NFormItem>
         </div>
@@ -273,30 +268,38 @@ async function save(keepOpen = false) {
             :feedback="errors.group"
             :validation-status="errors.group ? 'error' : undefined"
           >
-            <NInput
-              v-model:value="draft.group"
-              placeholder="例如 家庭服务（选填）"
-              :maxlength="50"
-              :input-props="{ 'aria-label': '分组' }"
-            />
+            <div class="full-width">
+              <GroupSelect v-model="draft.group" />
+              <div class="field-help">选择已有分组，或输入名称后按 Enter 新建。</div>
+            </div>
           </NFormItem>
         </div>
         <NFormItem
-          label="Web 访问地址（可选）"
+          label="自定义 Web 访问地址（可选）"
           :feedback="errors.access_url"
           :validation-status="errors.access_url ? 'error' : undefined"
         >
           <div class="full-width">
             <NInput
               v-model:value="draft.access_url"
-              placeholder="https://nas.example.com"
+              :placeholder="inheritedUrl || 'https://nas.example.com'"
               :input-props="{ 'aria-label': 'Web 访问地址' }"
             />
             <div class="field-help">
-              仅 Web 服务需要填写。
-              <button type="button" class="text-button" @click="suggestUrl">
-                根据目标地址生成 HTTP 链接
+              留空自动使用运行设置的服务访问地址 + 远程端口；自定义链接优先。 SSH、远程桌面、常见数据库及 UDP
+              默认仅复制连接地址。
+              <button
+                v-if="draft.access_url"
+                type="button"
+                class="text-button"
+                @click="draft.access_url = ''"
+              >
+                恢复默认地址
               </button>
+            </div>
+            <div v-if="!draft.access_url" class="field-help inherited-address" aria-live="polite">
+              {{ inheritedUrl ? '默认 Web 入口：' : '默认连接地址：' }}
+              <code>{{ inheritedUrl || address(state.target_ip, draft.remote_port) }}</code>
             </div>
           </div>
         </NFormItem>

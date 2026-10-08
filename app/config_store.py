@@ -194,9 +194,36 @@ class ConfigStore:
             displays = meta.setdefault("proxies_display", {})
             display = displays.pop(original_name, {}) if original_name else {}
             display.update(displayName=data.get("display_name") or data["name"], visible=data.get("visible", True),
-                           group=data.get("group", ""), favorite=data.get("favorite", False), accessUrl=data.get("access_url", ""))
+                           group=data.get("group", "").strip(), favorite=data.get("favorite", False), accessUrl=data.get("access_url", ""))
             displays[data["name"]] = display
             self._save(config=config if frpc_changed else None, meta=meta)
+            return self.state()
+
+    def save_groups(self, data, revision):
+        names = data.get("names")
+        group = data.get("group")
+        if (not isinstance(names, list) or not names
+                or any(not isinstance(name, str) or not name for name in names)):
+            raise ConfigError("请选择需要分组的代理", fields={"names": "代理名称必须为非空列表"})
+        if (not isinstance(group, str) or len(group) > 50
+                or any(ord(char) < 32 for char in group)):
+            raise ConfigError("分组格式不正确", fields={"group": "分组不能超过 50 个字符或包含控制字符"})
+        group = group.strip()
+        with self.lock:
+            self.check_revision(revision)
+            config, meta, _, _ = self._read()
+            existing = {proxy["name"] for proxy in config.get("proxies", [])}
+            if not set(names).issubset(existing):
+                raise ConfigError("部分代理已不存在，请刷新后重试；本次分组未保存", 404)
+            displays = meta.setdefault("proxies_display", {})
+            changed = False
+            for name in set(names):
+                display = displays.setdefault(name, {})
+                if display.get("group", "") != group:
+                    display["group"] = group
+                    changed = True
+            if changed:
+                self._save(meta=meta)
             return self.state()
 
     def delete_proxy(self, name, revision):

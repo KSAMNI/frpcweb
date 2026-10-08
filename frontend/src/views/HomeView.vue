@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { NButton, NEmpty, NInput, NTag, useMessage } from 'naive-ui'
-import { address, safeWebUrl, saveProxy, state } from '../api'
+import { address, serviceWebUrl, saveProxy, state } from '../api'
 import type { ProxyConfig } from '../types'
 import Icon from '../components/Icon.vue'
 import '../launcher.css'
@@ -25,13 +25,13 @@ const filtered = computed(() =>
     (p) =>
       (group.value === null || p.group === group.value) &&
       (!favoriteOnly.value || p.favorite) &&
-      `${p.display_name} ${p.name} ${p.local_ip} ${p.remote_port ?? ''} ${p.access_url} ${p.group}`
+      `${p.display_name} ${p.name} ${p.local_ip} ${p.remote_port ?? ''} ${entryAddress(p)} ${p.group}`
         .toLowerCase()
         .includes(search.value.trim().toLowerCase()),
   ),
 )
 function entryAddress(proxy: ProxyConfig) {
-  return safeWebUrl(proxy.access_url) || address(state.target_ip, proxy.remote_port)
+  return serviceWebUrl(proxy) || address(state.target_ip, proxy.remote_port)
 }
 async function copy(proxy: ProxyConfig) {
   const value = entryAddress(proxy)
@@ -59,7 +59,7 @@ function clearFilters() {
   favoriteOnly.value = false
 }
 function serviceKind(proxy: ProxyConfig) {
-  if (safeWebUrl(proxy.access_url)) return { icon: 'Globe', label: 'Web 应用' }
+  if (serviceWebUrl(proxy)) return { icon: 'Globe', label: 'Web 应用' }
   if (proxy.local_port === 22) return { icon: 'Terminal', label: 'SSH 终端' }
   if (proxy.local_port === 3389) return { icon: 'Monitor', label: '远程桌面' }
   if ([3306, 5432, 6379, 27017].includes(proxy.local_port ?? 0))
@@ -167,20 +167,20 @@ function serviceTone(proxy: ProxyConfig) {
         </div>
         <div class="service-card-bottom">
           <button
-            v-if="safeWebUrl(proxy.access_url)"
+            v-if="serviceWebUrl(proxy)"
             class="icon-control service-copy"
             :aria-label="`复制 ${proxy.display_name} 地址`"
             @click="copy(proxy)"
           >
             <Icon name="Copy" :size="15" />
           </button>
-          <span v-if="!safeWebUrl(proxy.access_url)" class="service-hint">
+          <span v-if="!serviceWebUrl(proxy)" class="service-hint">
             {{ proxy.type === 'udp' ? 'UDP 客户端连接' : '在客户端中连接' }}
           </span>
           <div class="service-card-actions">
             <a
-              v-if="safeWebUrl(proxy.access_url)"
-              :href="safeWebUrl(proxy.access_url)"
+              v-if="serviceWebUrl(proxy)"
+              :href="serviceWebUrl(proxy)"
               target="_blank"
               rel="noopener noreferrer"
               class="service-open"

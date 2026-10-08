@@ -1,5 +1,5 @@
-import { reactive, ref } from 'vue'
-import type { ProxyDraft, State, Runtime } from './types'
+import { computed, reactive, ref } from 'vue'
+import type { ProxyConfig, ProxyDraft, State, Runtime } from './types'
 
 export const state = reactive<State>({
   proxies: [],
@@ -97,4 +97,33 @@ export function safeWebUrl(url: string) {
   } catch {
     return ''
   }
+}
+
+export const groupOptions = computed(() => [
+  { label: '未分组', value: '' },
+  ...[...new Set(state.proxies.map((proxy) => proxy.group).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map((group) => ({ label: group, value: group })),
+])
+
+export async function saveGroups(names: string[], group: string) {
+  Object.assign(
+    state,
+    await request<State>('/proxy-groups', 'PUT', {
+      names,
+      group,
+      revision: state.revision,
+    }),
+  )
+}
+
+// Explicit links win. Default links are derived, never persisted, so changing
+// the service host or remote port immediately updates inherited entries.
+export function serviceWebUrl(
+  proxy: Pick<ProxyConfig, 'access_url' | 'type' | 'local_port' | 'remote_port'>,
+) {
+  if (proxy.access_url) return safeWebUrl(proxy.access_url)
+  if (proxy.type !== 'tcp' || !proxy.remote_port || !state.target_ip) return ''
+  if ([22, 3389, 3306, 5432, 6379, 27017].includes(proxy.local_port ?? 0)) return ''
+  return safeWebUrl(`http://${address(state.target_ip, proxy.remote_port)}`)
 }

@@ -69,6 +69,13 @@ def delete_proxy(name):
     return jsonify(response_state(store().delete_proxy(name, data.get("revision"))))
 
 
+@api.put("/proxy-groups")
+@protect_write
+def proxy_groups():
+    data = payload()
+    return jsonify(response_state(store().save_groups(data, data.get("revision"))))
+
+
 @api.put("/settings")
 @protect_write
 def settings():
