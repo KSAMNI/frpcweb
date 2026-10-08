@@ -1,21 +1,20 @@
-# Use an official Python runtime as a parent image
+FROM node:22-alpine AS frontend
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim
-
-# Set the working directory in the container
 WORKDIR /app
-
-# Copy the requirements file and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code
-COPY . .
-
-# Ensure frpc binary is executable
+COPY app/ ./app/
+COPY main.py ./
+COPY frp/ ./frp/
+COPY examples/frpc.toml examples/app_config.json ./
+COPY --from=frontend /build/dist ./frontend/dist
 RUN chmod +x /app/frp/frpc
-
-# Expose the port the app runs on
+ENV HOST=0.0.0.0 PORT=8000 FRPC_MANAGE=1 FRPC_AUTOSTART=1
 EXPOSE 8000
-
-# Command to run the application
 CMD ["python", "main.py"]

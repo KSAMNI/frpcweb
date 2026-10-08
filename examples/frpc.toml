@@ -1,0 +1,4 @@
+# Placeholder only. Mount your own configuration for a real deployment.
+serverAddr = "127.0.0.1"
+serverPort = 7000
+proxies = []

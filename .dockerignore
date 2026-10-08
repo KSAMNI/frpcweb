@@ -19,3 +19,18 @@ css_content.txt
 # OS-specific
 .DS_Store
 Thumbs.db
+# Frontend build artifacts and local tooling
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+.planning/
+.claude/
+.omc/
+logs/
+tmp/
+tests/
+
+# Never send local production configuration in build context
+/frpc.toml
+/app_config.json

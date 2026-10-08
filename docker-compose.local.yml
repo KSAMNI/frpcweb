@@ -1,0 +1,13 @@
+name: frpc-console-preview
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      FRPC_MANAGE: "0"
+      FRPC_AUTOSTART: "0"
+    volumes:
+      - ./tmp/local-test/frpc.toml:/app/frpc.toml
+      - ./tmp/local-test/app_config.json:/app/app_config.json
+    restart: "no"

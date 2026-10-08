@@ -1,90 +1,165 @@
-# Frpc Web Configurator
+# FRP Console
 
-这是一个基于 Flask 的轻量级 Web 应用，用于图形化管理 `frpc.toml` 与 `app_config.json`，并支持容器化部署。
+基于 **Flask + Vue 3 + TypeScript + Vite + Naive UI** 的 frpc 配置与服务入口管理界面。
 
-## ✨ 功能特性
+> 本地测试默认不启动、不停止、不重启 frpc；请先用配置副本验证。Docker 部署默认管理 frpc 进程，升级前请备份配置并阅读下方部署说明。
 
-*   **主页**: 以卡片形式展示已配置的 frp 代理，并提供一键快速访问功能。
-*   **配置页**:
-    *   以表格形式清晰地展示所有 frp 代理的详细配置。
-    *   提供完整的 CRUD (创建、读取、更新、删除) 操作。
-    *   可以为每个代理设置在主页的显示/隐藏状态。
-    *   可以为每个代理设置一个易于识别的自定义显示名称。
-*   **设置页**:
-    *   可以自定义主页 "一键访问" 功能的目标 IP 地址。
-*   **Docker 化**:
-    *   提供 `Dockerfile` 构建镜像。
-    *   提供 `docker-compose.yml`，用于一键启动应用服务和 frpc 服务。
+## 本地试用（Windows PowerShell，推荐）
 
-## 🚀 技术栈
+需要 Python 3.11+、Node.js 22 LTS（当前已在 22.17 上验证）、npm。
 
-*   **后端**: Python 3.11, Flask
-*   **前端**: Jinja 模板 + 原生 HTML/CSS/JS
-*   **UI/CSS**: 自定义样式
-*   **容器化**: Docker, Docker Compose
+在项目根目录执行：
 
-## 🏃 如何运行
-
-### 1. 准备工作
-
-*   确保您的机器上已经安装了 [Docker](https://www.docker.com/) 和 [Docker Compose](https://docs.docker.com/compose/install/)。
-*   在项目根目录下，确保 `frpc.toml` 和 `app_config.json` 文件已存在。如果不存在，可以先手动创建。
-
-### 2. 启动应用（Docker Compose）
-
-在项目根目录下，执行以下命令：
-
-```bash
-docker-compose up --build
+```powershell
+.\scripts\start-local.ps1
 ```
 
-这将会：
+脚本会：
 
-1.  构建 `app` 服务的 Docker 镜像。
-2.  启动 `app` 服务和 `frpc` 服务。
+1. 创建或复用项目 `.venv` 并安装 Python 依赖。
+2. 首次运行安装前端依赖并构建静态文件。
+3. **仅首次**将现有 `frpc.toml` 和 `app_config.json` 复制到 `tmp/local-test/`。
+4. 使用副本启动 http://127.0.0.1:8000 ，禁用 frpc 进程管理。
 
-### 3. 访问应用
+后续测试会保留副本内的修改，不会重复覆盖。真实配置文件不受影响。若端口占用或前端修改后需要重建：
 
-*   **Web 界面**: 在您的浏览器中打开 `http://localhost:8000`。
-*   **Web 界面**: 打开后即可管理代理配置和快速访问。
-
-## 📦 Docker 镜像
-
-已配置 GitHub Actions 自动构建并推送到 GHCR 与 Docker Hub。
-
-拉取镜像示例：
-
-```bash
-docker pull ghcr.io/yancj9ya/frpcweb:latest
-docker pull docker.io/yancjycj/frpcweb:latest
+```powershell
+.\scripts\start-local.ps1 -Port 8001 -Rebuild
 ```
 
-使用镜像运行示例（请按需挂载配置文件）：
+Ctrl+C 停止。脚本不会修改系统执行策略；如本机策略禁止脚本，可按下方手动方式启动。
 
-```bash
-docker run --rm -p 8000:8000 ^
-  -v %cd%/frpc.toml:/app/frpc.toml ^
-  -v %cd%/app_config.json:/app/app_config.json ^
-  ghcr.io/yancj9ya/frpcweb:latest
+### 手动启动 / 热更新开发
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
+npm --prefix .\frontend ci
+npm --prefix .\frontend run build
+
+New-Item -ItemType Directory -Path .\tmp\local-test -Force
+# 只复制不存在的测试文件，避免覆盖之前的测试修改。
+foreach ($name in @('frpc.toml', 'app_config.json')) {
+    if (-not (Test-Path -LiteralPath ".\tmp\local-test\$name")) {
+        Copy-Item -LiteralPath ".\$name" -Destination ".\tmp\local-test\$name"
+    }
+}
+$env:FRPC_CONFIG = Join-Path (Get-Location) 'tmp\local-test\frpc.toml'
+$env:APP_CONFIG = Join-Path (Get-Location) 'tmp\local-test\app_config.json'
+$env:FRPC_LOG = Join-Path (Get-Location) 'tmp\local-test\frpc.log'
+$env:FRPC_MANAGE = '0'
+$env:FRPC_AUTOSTART = '0'
+$env:HOST = '127.0.0.1'
+$env:PORT = '8000'
+.\.venv\Scripts\python.exe -B .\main.py
 ```
 
-发布版本号：
+访问 http://127.0.0.1:8000 查看生产构建。开发时另开一个终端执行：
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
+```powershell
+npm --prefix .\frontend run dev
 ```
 
-## 📁 项目结构
+访问 http://127.0.0.1:5173 使用热更新；Vite 将 `/api` 代理到后端 8000 端口。开发模式后端需保持在 8000，或自行调整 `frontend/vite.config.ts`。
 
+## 功能与交互
+
+- **服务入口**：服务优先的紧凑启动台，分组色彩卡片、搜索、收藏；点击卡片打开 Web 应用或复制客户端地址，收藏与复制按钮独立操作。Web 地址复制使用配置的访问 URL。
+- **代理管理**：紧凑列表、协议/可见性筛选、分页、新增/编辑抽屉、复制基础配置。
+- **便捷添加**：Web、SSH、远程桌面、UDP 模板，字段错误反馈，保存并继续添加。
+- **数据保护**：后端端口/主机名/名称/URL 校验，重名和同协议端口冲突检查，修订版本冲突返回 409，失败时保留表单。
+- **明确生效状态**：保存不等于应用；首页展示信息立即更新，连接规则需要单独应用。
+- **日志**：只读取最后 32 KB，可选每 5 秒刷新，页面在后台时暂停。
+- **加载**：无外部字体/CDN，路由懒加载，哈希静态资源长缓存，Brotli/gzip 压缩，不再增删改后整页刷新。
+
+### 配置兼容和已知边界
+
+- 沿用 `frpc.toml`、`app_config.json`，保留服务器认证参数和未编辑的代理高级字段；API 不返回服务器认证信息。
+- 可视化编辑当前支持 TCP / UDP。HTTP、HTTPS、STCP 等已有协议按只读方式展示，不静默转换协议。
+- **复制仅复制基础字段与展示信息**，不复制隐藏的插件、认证等高级参数。
+- `proxies_display` 新增可选字段：`group`、`favorite`、`accessUrl`，原有 `displayName`、`visible` 保持兼容。
+- 为避免把 SSH / UDP 等误当成网页，旧代理默认提供“复制地址”。要恢复“打开服务”，请在编辑抽屉显式填写 HTTP/HTTPS 访问地址。
+- 目标地址仅用于复制地址和生成链接，不修改 `serverAddr`，也不批量改写自定义链接。
+- `toml` 序列化会保留数据字段，但**不保证注释和原格式**；重要配置请另行备份。
+- 同协议远程端口校验仅覆盖当前文件，不代表能探测其他 frpc 客户端占用的 frps 端口。
+- 文件写入优先使用同目录临时文件替换；Docker 单文件挂载无法替换时采用兼容写入。两文件写入失败会尝试回滚，但不保证掉电时跨文件事务原子性。
+- 修订检查和线程锁保护单个 Web 进程的操作；请勿同时运行多个写配置的实例或外部自动写入程序。
+
+## 真实 frpc 运行验证（显式启用）
+
+仓库内的 `frp/frpc` 是 Linux 文件。Windows 需要自行提供对应版本的 `frpc.exe`。
+
+在已设置测试配置路径的终端中：
+
+```powershell
+$env:FRPC_BIN = 'C:\Tools\frp\frpc.exe'
+$env:FRPC_MANAGE = '1'
+$env:FRPC_AUTOSTART = '0'
+.\.venv\Scripts\python.exe -B .\main.py
 ```
-.
-├── app/                   # Flask 应用
-│   ├── templates/         # Jinja 模板
-│   └── static/            # 静态资源
-├── app_config.json        # 应用配置文件 (目标 IP, 显示设置等)
-├── frpc.toml              # frp 客户端配置文件
-├── main.py                # 应用入口
-├── requirements.txt       # Python 依赖
-├── Dockerfile             # 用于构建应用镜像
-└── docker-compose.yml     # Docker Compose 编排文件
+
+在界面点击“应用配置”并确认。后端先运行 `frpc verify -c ...`，成功后重启**当前控制台拥有的进程**。需使用支持该命令的 frpc 版本。不会接管或停止外部已有进程；请避免启动重复实例。
+
+- 进程运行状态不代表代理连接成功或业务服务健康。
+- 应用失败可查看日志；校验失败不会停止原进程。启动失败不会自动回滚到历史连接配置。
+- `create_app()` 无启动副作用。只在 `main.py` 入口且 `FRPC_AUTOSTART=1` 时自动启动。
+- 使用单进程、多线程 Waitress，**不要用多个 WSGI worker 管理同一个 frpc/config 文件**。
+
+## Docker
+
+多阶段构建：Node 只在构建阶段使用，运行镜像是 Python + 静态文件 + frpc。镜像内只包含 `examples/` 中的空白占位配置，不会烘焙真实服务器地址或 token；正式运行必须挂载自己的配置。
+
+本地安全测试，先运行上面的脚本/复制步骤生成 `tmp/local-test` 配置：
+
+```powershell
+docker compose -f .\docker-compose.local.yml up --build
+```
+
+访问 http://127.0.0.1:8000 。测试 compose 只绑定 loopback，禁用 frpc 管理。
+
+现有 `docker-compose.yml` 保持原样，仍指向已发布镜像；**直接启动它不会使用本分支界面**。
+正式镜像默认启用 FRPC_MANAGE/FRPC_AUTOSTART，并监听 0.0.0.0；先验证挂载配置、网络与访问控制，再用于正式部署。
+
+## 安全边界
+
+**本版本未提供登录/用户权限系统。不要直接暴露到公网。** API 有会话 CSRF 校验、同源检查和非 GET 删除，但这些不替代身份认证。可信内网以外的部署必须使用带身份认证的反向代理和 HTTPS，必要时设置 `SECRET_KEY` 并配置安全 Cookie。反向代理需保留正确 Host；本地默认只监听 127.0.0.1。
+
+## 自动测试
+
+后端单元/接口测试均在临时目录操作，运行时进程控制使用 mock：
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest discover -s .\tests -v
+npm --prefix .\frontend run build
+```
+
+浏览器测试（不读写真实配置），先构建前端。在终端一启动独立 fixture 服务：
+
+```powershell
+.\.venv\Scripts\python.exe -B .\tests\serve_fixture.py
+```
+
+终端二：
+
+```powershell
+# 使用本机 Chrome；无 Chrome 可在 frontend 目录运行 npx playwright install chromium，省略该环境变量。
+$env:PLAYWRIGHT_CHANNEL = 'chrome'
+npm --prefix .\frontend run test:e2e
+```
+
+服务地址 http://127.0.0.1:18080 。fixture 的重置接口仅存在于测试脚本，不在生产应用注册。
+测试覆盖新增/编辑/复制/删除、重复校验、继续添加、设置、日志、首页密度、组合筛选、卡片与键盘操作、长名称、320–1920px 布局和无外部请求；截图保存在 `frontend/test-results/`。
+
+## 目录
+
+```text
+app/api.py             JSON API 与请求保护
+app/config_store.py    校验、配置读写和修订冲突检查
+app/frpc.py            单进程 frpc 生命周期与日志
+app/__init__.py        应用工厂、SPA 静态资源与压缩
+frontend/src/          Vue 页面、组件与样式
+scripts/start-local.ps1 配置副本本地试用入口
+tests/                 后端测试与独立浏览器测试服务
+```
+
+旧 `app/routes.py`、Jinja 模板与样式暂时保留作迁移参考，不在新版应用中注册或加载。

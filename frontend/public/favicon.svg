@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">FRP Console — connected portals</title>
+  <rect width="64" height="64" rx="15" fill="#142638"/>
+  <g fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 16H16V48H24" stroke="#f2fbf9"/>
+    <path d="M40 16H48V48H40" stroke="#5ee0c1"/>
+    <path d="M24 37L40 27" stroke="#5ee0c1"/>
+  </g>
+  <circle cx="24" cy="37" r="3" fill="#f2fbf9"/>
+</svg>
