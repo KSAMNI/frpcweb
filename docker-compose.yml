@@ -3,7 +3,7 @@ version: '3.8'
 services:
   app:
     container_name: frpc-web
-    image: ghcr.io/yancj9ya/frpcweb:latest
+    image: ghcr.io/ksamni/frpcweb:latest
     environment:
       - PORT=5173
     volumes:

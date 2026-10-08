@@ -12,7 +12,7 @@ permissions:
 
 env:
   GHCR_REGISTRY: ghcr.io
-  GHCR_IMAGE_NAME: yancj9ya/frpcweb
+  GHCR_IMAGE_NAME: ksamni/frpcweb
   DOCKERHUB_IMAGE_NAME: docker.io/yancjycj/frpcweb
 
 jobs:

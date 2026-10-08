@@ -117,7 +117,19 @@ docker compose -f .\docker-compose.local.yml up --build
 
 访问 http://127.0.0.1:8000 。测试 compose 只绑定 loopback，禁用 frpc 管理。
 
-现有 `docker-compose.yml` 保持原样，仍指向已发布镜像；**直接启动它不会使用本分支界面**。
+推送 `main` 后，GitHub Actions 自动构建并发布镜像：
+
+- GHCR：`ghcr.io/ksamni/frpcweb:latest`
+- Docker Hub：`yancjycj/frpcweb:latest`
+- 同时提供 `main` 和 `sha-<短提交号>` 标签，便于固定版本。
+
+`docker-compose.yml` 使用新的 GHCR 地址；旧的 `ghcr.io/yancj9ya/frpcweb` 地址因账号更名不再作为发布目标。升级前备份配置，在镜像发布成功后运行：
+
+```powershell
+docker compose pull
+docker compose up -d
+```
+
 正式镜像默认启用 FRPC_MANAGE/FRPC_AUTOSTART，并监听 0.0.0.0；先验证挂载配置、网络与访问控制，再用于正式部署。
 
 ## 安全边界
